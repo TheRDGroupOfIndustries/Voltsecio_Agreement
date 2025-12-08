@@ -2,244 +2,252 @@
 
 import Image from "next/image";
 import React, { useState, useEffect } from "react";
+import { toast, Toaster } from "react-hot-toast";
 
-type Role = {
-  name: string;
-  date: string;
-  signature: string;
-};
+const AgreementSignatures = () => {
+  const [voltSec, setVoltSec] = useState({
+    name: "",
+    designation: "",
+    date: "",
+    signature: "",
+  });
 
-type Company = {
-  ceo: Role;
-  coFounder: Role;
-};
+  const [developer, setDeveloper] = useState({
+    developerName: "",
+    date: "",
+    signature: "",
+  });
 
-type AgreementData = {
-  rdGroup: Company;
-  colortouch: Company;
-};
+  const [loadingVoltSec, setLoadingVoltSec] = useState(false);
+  const [loadingDeveloper, setLoadingDeveloper] = useState(false);
 
-const initialData: AgreementData = {
-  rdGroup: {
-    ceo: { name: "", date: "", signature: "" },
-    coFounder: { name: "", date: "", signature: "" },
-  },
-  colortouch: {
-    ceo: { name: "", date: "", signature: "" },
-    coFounder: { name: "", date: "", signature: "" },
-  },
-};
+  const [hasSavedVoltSec, setHasSavedVoltSec] = useState(false);
+  const [hasSavedDeveloper, setHasSavedDeveloper] = useState(false);
 
-const AgreementSignatures: React.FC = () => {
-  const [data, setData] = useState<AgreementData>(initialData);
-
-  // Load stored data (signatures + names + dates)
+  // ---------------- FETCH EXISTING VOLTSEC ON LOAD -------------------
   useEffect(() => {
-    const fetchSignatures = async () => {
+    const fetchVoltSec = async () => {
       try {
-        const res = await fetch("/api/upload");
-        const result = await res.json();
-        if (result.signatures) {
-          setData((prev) => ({
-            ...prev,
-            ...result.signatures,
-          }));
+        const res = await fetch("/api/voltsec");
+
+        if (res.status === 200) {
+          const data = await res.json();
+
+          setVoltSec({
+            name: data.data.name,
+            designation: data.data.designation,
+            date: data.data.date,
+            signature: data.data.signature,
+          });
+
+          setHasSavedVoltSec(true);
         }
       } catch (err) {
-        console.error(err);
+        console.log("No VoltSec record found.");
       }
     };
-    fetchSignatures();
+
+    fetchVoltSec();
   }, []);
 
-  // Handle name/date change + persist to backend
-  const handleChange = (
-    company: keyof AgreementData,
-    role: keyof Company,
-    field: keyof Role,
-    value: string
-  ) => {
-    setData((prev) => ({
-      ...prev,
-      [company]: {
-        ...prev[company],
-        [role]: {
-          ...prev[company][role],
-          [field]: value,
-        },
-      },
-    }));
-
-    // Save to backend (PUT)
-    fetch("/api/upload", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ companyKey: company, roleKey: role, [field]: value }),
-    }).catch((err) => console.error("Failed to save", err));
-  };
-
-  // Handle file uploads (signature)
-  const handleFileChange = async (
-    company: keyof AgreementData,
-    role: keyof Company,
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  // ---------------- UPLOAD SIGNATURE -------------------
+  const uploadSignature = async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("companyKey", company);
-    formData.append("roleKey", role);
 
     try {
       const res = await fetch("/api/upload", { method: "POST", body: formData });
-      const result = await res.json();
-      if (result.url) {
-        handleChange(company, role, "signature", result.url);
-      }
-    } catch (err) {
-      console.error("Upload failed", err);
+      const data = await res.json();
+      return data.url;
+    } catch {
+      toast.error("Upload failed!");
+      return null;
     }
   };
 
-  // Remove signature
-  // const handleRemoveSignature = async (company: keyof AgreementData, role: keyof Company) => {
-  //   try {
-  //     await fetch("/api/upload", {
-  //       method: "DELETE",
-  //       headers: { "Content-Type": "application/json" },
-  //       body: JSON.stringify({ companyKey: company, roleKey: role }),
-  //     });
-  //     handleChange(company, role, "signature", "");
-  //   } catch (err) {
-  //     console.error("Failed to remove signature", err);
-  //   }
-  // };
+  // ---------------- SAVE VOLTSEC -------------------
+  const saveVoltSec = async () => {
+    if (loadingVoltSec || hasSavedVoltSec) return;
 
-const handleRemoveSignature = async (company: keyof AgreementData, role: keyof Company) => {
-  try {
-    await fetch("/api/upload", {
-      method: "DELETE",
+    setLoadingVoltSec(true);
+
+    await fetch("/api/voltsec", {
+      method: "POST",
+      body: JSON.stringify(voltSec),
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ companyKey: company, roleKey: role }),
     });
 
-    // Reset all fields (name, date, signature)
-    setData((prev) => ({
-      ...prev,
-      [company]: {
-        ...prev[company],
-        [role]: { name: "", date: "", signature: "" },
-      },
-    }));
-
-    // Persist cleared data to backend
-    await fetch("/api/upload", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        companyKey: company,
-        roleKey: role,
-        name: "",
-        date: "",
-        signature: "",
-      }),
-    });
-  } catch (err) {
-    console.error("Failed to remove signature and clear data", err);
-  }
-};
-
-  // Render role input fields
-  const renderRole = (companyKey: keyof AgreementData, roleKey: keyof Company, roleLabel: string) => {
-    const role = data[companyKey][roleKey];
-
-    return (
-      <div className="text-left">
-        <p className="text-sm font-medium text-white mb-1">{roleLabel}</p>
-
-        <p className="text-sm text-gray-400 mb-1">
-          Name:{" "}
-          <input
-            type="text"
-            value={role.name}
-            onChange={(e) => handleChange(companyKey, roleKey, "name", e.target.value)}
-            className="text-white p-1 rounded w-full bg-[#29323E] border border-gray-600 shadow-[0_0_6px_rgba(255,255,255,0.15)] focus:shadow-[0_0_8px_rgba(255,255,255,0.25)] focus:outline-none transition-shadow"
-          />
-        </p>
-
-        <p className="text-xs text-gray-400 mb-1">
-          Date:{" "}
-          <input
-            type="date"
-            value={role.date}
-            onChange={(e) => handleChange(companyKey, roleKey, "date", e.target.value)}
-            className="text-white p-1 rounded w-full"
-          />
-        </p>
-
-        <div className="border-b-2 border-gray-600 mb-2 pb-2 flex justify-center items-center h-24">
-          {role.signature ? (
-            <Image
-              width={200}
-              height={100}
-              src={role.signature}
-              alt={`${roleLabel} signature`}
-              className="max-h-full object-contain"
-            />
-          ) : (
-            <span className="text-gray-500">Signature Preview</span>
-          )}
-        </div>
-
-        {!role.signature && (
-          <p className="text-sm text-gray-400">
-            Signature:{" "}
-            <input type="file" accept="image/*" onChange={(e) => handleFileChange(companyKey, roleKey, e)} />
-          </p>
-        )}
-
-        {role.signature && (
-          <p className="text-sm mt-2">
-            <button
-              className="bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700"
-              onClick={() => handleRemoveSignature(companyKey, roleKey)}
-            >
-              Remove Signature
-            </button>
-          </p>
-        )}
-      </div>
-    );
+    toast.success("VoltSec saved!");
+    setLoadingVoltSec(false);
+    setHasSavedVoltSec(true);
   };
 
-  return (
-    <div>
-      <section className="bg-gray-900 rounded-xl shadow-lg border border-gray-700 p-8 mt-12">
-        <h2 className="text-2xl font-bold text-white mb-8 text-center">Agreement Signatures</h2>
-        <div className="grid md:grid-cols-2 gap-8">
-          <div className="text-center">
-            <div className="bg-gray-800 rounded-lg p-6 mb-4">
-              <h3 className="font-semibold text-white mb-6">For The RD Group of Industries</h3>
-              <div className="space-y-6">
-                {renderRole("rdGroup", "ceo", "Founder & CEO")}
-                {renderRole("rdGroup", "coFounder", "Co-Founder & MD")}
-              </div>
-            </div>
-          </div>
+  // ---------------- SAVE DEVELOPER -------------------
+  const saveDeveloper = async () => {
+    if (loadingDeveloper || hasSavedDeveloper) return;
 
-          <div className="text-center">
-            <div className="bg-gray-800 rounded-lg p-6 mb-4">
-              <h3 className="font-semibold text-white mb-6">For Colortouch India</h3>
-              <div className="space-y-6">
-                {renderRole("colortouch", "ceo", "Founder & CEO")}
-                {renderRole("colortouch", "coFounder", "Co-Founder & MD")}
-              </div>
-            </div>
-          </div>
+    setLoadingDeveloper(true);
+
+    const data=await fetch("/api/developer", {
+      method: "POST",
+      body: JSON.stringify(developer),
+      headers: { "Content-Type": "application/json" },
+    });
+    console.log("daa; ",data);
+    
+
+    toast.success("Developer saved!");
+    setLoadingDeveloper(false);
+    setHasSavedDeveloper(true);
+  };
+
+  // ---------------- AUTO SAVE VOLTSEC -------------------
+  useEffect(() => {
+    if (!voltSec.name || !voltSec.designation || !voltSec.date || !voltSec.signature) return;
+    if (hasSavedVoltSec) return;
+
+    const timer = setTimeout(() => saveVoltSec(), 300);
+    return () => clearTimeout(timer);
+  }, [voltSec, hasSavedVoltSec]);
+
+  // ---------------- AUTO SAVE DEVELOPER -------------------
+  useEffect(() => {
+    if (!developer.developerName || !developer.date || !developer.signature) return;
+    if (hasSavedDeveloper) return;
+
+    const timer = setTimeout(() => saveDeveloper(), 300);
+    return () => clearTimeout(timer);
+  }, [developer, hasSavedDeveloper]);
+
+  // ---------------- SIGNATURE BLOCK -------------------
+  const SignatureBlock = (label: string, url: string, onUpload: any, disabled: boolean) => (
+    <div className="mb-4">
+      <p className="text-gray-300 mb-1 text-sm">{label}</p>
+
+      <div className="border border-gray-700 bg-gray-800 rounded-2xl p-3 h-28 flex justify-center items-center shadow-inner mb-3">
+        {url ? (
+          <Image src={url} width={200} height={80} alt="Signature" />
+        ) : (
+          <span className="text-gray-500">Signature Preview</span>
+        )}
+      </div>
+
+      {!disabled && !url && (
+        <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white text-sm py-2 px-4 rounded-xl inline-block transition">
+          Upload Signature
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+
+              toast.loading("Uploading...", { id: "upload" });
+
+              const uploadedURL = await uploadSignature(file);
+
+              if (!uploadedURL) {
+                toast.error("Upload failed!", { id: "upload" });
+                return;
+              }
+
+              onUpload(uploadedURL);
+
+              toast.success("Signature Uploaded!", { id: "upload" });
+            }}
+          />
+        </label>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center px-6">
+      <h2 className="text-white text-4xl md:text-5xl font-bold mb-12 drop-shadow-lg">
+        Agreement Signatures
+      </h2>
+
+      <div className="grid md:grid-cols-2 gap-10 w-full max-w-5xl">
+
+        {/* ---------------- VOLTSEC SECTION ---------------- */}
+        <div className="bg-[#00A9FF0A] rounded-3xl p-8 shadow-2xl gradient-border">
+          <h3 className="text-white text-xl mb-6 text-center font-semibold">VoltSec.io</h3>
+
+          <input
+            type="text"
+            placeholder="Name"
+            value={voltSec.name}
+            disabled={hasSavedVoltSec}
+            onChange={(e) => setVoltSec({ ...voltSec, name: e.target.value })}
+            className={`w-full px-4 py-3 bg-gray-800 border border-gray-500 rounded-2xl text-gray-300 mb-4 ${
+              hasSavedVoltSec ? "cursor-not-allowed" : ""
+            }`}
+          />
+
+          <input
+            type="text"
+            placeholder="Designation"
+            value={voltSec.designation}
+            disabled={hasSavedVoltSec}
+            onChange={(e) => setVoltSec({ ...voltSec, designation: e.target.value })}
+            className={`w-full px-4 py-3 bg-gray-800 border border-gray-500 rounded-2xl text-gray-300 mb-4 ${
+              hasSavedVoltSec ? "cursor-not-allowed" : ""
+            }`}
+          />
+
+          <input
+            type="date"
+            value={voltSec.date}
+            disabled={hasSavedVoltSec}
+            onChange={(e) => setVoltSec({ ...voltSec, date: e.target.value })}
+            className={`w-full px-4 py-3 bg-gray-800 border border-gray-500 rounded-2xl text-gray-300 mb-4 ${
+              hasSavedVoltSec ? "cursor-not-allowed" : ""
+            }`}
+          />
+
+          {SignatureBlock("Signature", voltSec.signature, (url: string) => {
+            setVoltSec({ ...voltSec, signature: url });
+          }, hasSavedVoltSec)}
         </div>
-      </section>
+
+        {/* ---------------- DEVELOPER SECTION ---------------- */}
+        <div className="bg-[#00A9FF1A] rounded-3xl p-8 shadow-2xl gradient-border">
+          <h3 className="text-white text-xl mb-6 text-center font-semibold">Developer</h3>
+
+          <input
+            type="text"
+            placeholder="Developer Name"
+            value={developer.developerName}
+            disabled={hasSavedDeveloper}
+            onChange={(e) =>
+              setDeveloper({ ...developer, developerName: e.target.value })
+            }
+            className={`w-full px-4 py-3 bg-gray-800 border border-gray-500 rounded-2xl text-gray-300 mb-4 ${
+              hasSavedDeveloper ? "cursor-not-allowed" : ""
+            }`}
+          />
+
+          <input
+            type="date"
+            value={developer.date}
+            disabled={hasSavedDeveloper}
+            onChange={(e) => setDeveloper({ ...developer, date: e.target.value })}
+            className={`w-full px-4 py-3 bg-gray-800 border border-gray-500 rounded-2xl text-gray-300 mb-4 ${
+              hasSavedDeveloper ? "cursor-not-allowed" : ""
+            }`}
+          />
+
+          {SignatureBlock(
+            "Signature",
+            developer.signature,
+            (url: string) => setDeveloper({ ...developer, signature: url }),
+            hasSavedDeveloper
+          )}
+        </div>
+      </div>
+
+      <Toaster position="top-right" />
     </div>
   );
 };
